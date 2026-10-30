@@ -977,7 +977,7 @@
         if (paused) { last = window.__shipTargetFPS || 30; window.__shipSetFPS(0.04); pb.textContent = '▶'; }
         else { window.__shipSetFPS(last); pb.textContent = '⏸'; }
       };
-      document.body.appendChild(pb);
+      // document.body.appendChild(pb); // 线上版暂时隐藏暂停按钮
     })();
     // ⭐ 里程排行榜
     (function () {
@@ -1038,7 +1038,7 @@
       lbBtn.textContent = '⭐';
       lbBtn.style.cssText = 'position:fixed;left:10px;top:calc(10px + env(safe-area-inset-top));z-index:99;padding:8px 11px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(10,20,35,.8);color:#ffd76a;font-size:14px;';
       lbBtn.onclick = function () { if (LB.name()) show(); else askName(show); };
-      document.body.appendChild(lbBtn);
+      // document.body.appendChild(lbBtn); // 线上版暂时隐藏排行榜入口
     })();
     // 竖屏引导层
     (function () {
