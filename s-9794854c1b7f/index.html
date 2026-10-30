@@ -41,6 +41,107 @@
   </style>
   </head>
   <body>
+<script>
+(function(){
+  var L = []; try { L = JSON.parse(localStorage.getItem('shipioDiag')||'[]'); } catch(e){}
+  if (!L.length || L[0].k !== 'meta') L.unshift({k:'meta', ua:navigator.userAgent.slice(0,90), dpr:window.devicePixelRatio, scr:screen.width+'x'+screen.height});
+  function add(o){ try { o.t=Date.now(); L.push(o); if (L.length>500) L=L.slice(-500); localStorage.setItem('shipioDiag', JSON.stringify(L)); } catch(e){} }
+  window.__diagAdd = add; window.__diagList = function(){ return L; };
+  window.addEventListener('error', function(e){ add({k:'jserr', m:String(e.message||'').slice(0,200), s:String(e.filename||'').split('/').pop()+':'+e.lineno}); });
+  window.addEventListener('unhandledrejection', function(e){ add({k:'rej', m:String(e.reason||'').slice(0,200)}); });
+  var ce = console.error;
+  console.error = function(){ try { add({k:'cerr', m:[].join.call(arguments,' ').slice(0,240)}); } catch(e){} return ce.apply(console, arguments); };
+  var n=0, t0=performance.now();
+  function raf(t){ n++; if (t-t0>=5000){ var fps=Math.round(n*1000/(t-t0)); if (fps<45) add({k:'lowfps', v:fps}); n=0; t0=t; } requestAnimationFrame(raf); }
+  requestAnimationFrame(raf);
+  if (/[?&]dumplog=1/.test(location.search)) window.addEventListener('load', function(){
+    var d=document.createElement('div');
+    d.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;z-index:9999;background:rgba(0,0,0,.88);color:#7cff9b;font:11px/1.4 Menlo,monospace;padding:8px;border-radius:8px;max-height:42%;overflow:auto;white-space:pre-wrap;';
+    function render(){ try { d.textContent = JSON.stringify(L.slice(-150)); } catch(e){} }
+    render(); setInterval(render, 2000);
+    d.onclick = function(){ try { navigator.clipboard.writeText(JSON.stringify(L)); } catch(e){} };
+    document.body.appendChild(d);
+  });
+})();
+</script>
+<script>
+(function(){
+  if (window.__wasmCapWrap) return;
+  window.__wasmCapWrap = true;
+  window.__cap = { memory:null, table:null };
+  function scanObj(o, depth){
+    if (!o || typeof o !== 'object' || depth > 2) return;
+    for (var k in o){
+      var v; try { v = o[k]; } catch(e){ continue; }
+      if (!v) continue;
+      if (v instanceof WebAssembly.Memory){ if (!window.__cap.memory || v.buffer.byteLength > window.__cap.memory.buffer.byteLength) window.__cap.memory = v; }
+      else if (v instanceof WebAssembly.Table){ if (!window.__cap.table || v.length > window.__cap.table.length) window.__cap.table = v; }
+      else if (typeof v === 'object' && !(v instanceof WebAssembly.Global)) scanObj(v, depth+1);
+    }
+  }
+  var _inst = WebAssembly.instantiate.bind(WebAssembly);
+  WebAssembly.instantiate = function(){
+    for (var i=0;i<arguments.length;i++) scanObj(arguments[i], 0);
+    var r = _inst.apply(null, arguments);
+    var after = function(res){ try { if (res && res.instance) scanObj(res.instance.exports,0); } catch(e){} return res; };
+    return (r && typeof r.then === 'function') ? r.then(after) : r;
+  };
+  var _is = WebAssembly.instantiateStreaming;
+  if (_is) WebAssembly.instantiateStreaming = function(){
+    for (var i=0;i<arguments.length;i++) scanObj(arguments[i], 0);
+    var r = _is.apply(null, arguments);
+    var after = function(res){ try { if (res && res.instance) scanObj(res.instance.exports,0); } catch(e){} return res; };
+    return (r && typeof r.then === 'function') ? r.then(after) : r;
+  };
+  var _IC = WebAssembly.Instance;
+  window.WebAssembly.Instance = function(mod, imp){
+    scanObj(imp, 0);
+    var inst = new _IC(mod, imp);
+    try { scanObj(inst.exports,0); } catch(e){}
+    return inst;
+  };
+  var pausedAt = 0;
+  window.__setPause = function(v){
+    var H = window.__pauseHook; if (!H || H.pauseFlag.value === v) return;
+    H.pauseFlag.value = v;
+    if (v) pausedAt = Date.now();
+    if (window.__diagAdd) window.__diagAdd({k: v ? 'pause' : 'resume'});
+  };
+  setInterval(function(){
+    var H = window.__pauseHook;
+    if (H && H.pauseFlag.value === 1 && Date.now() - pausedAt > 120000){
+      window.__setPause(0); if (window.__diagAdd) window.__diagAdd({k:'watchdog'});
+    }
+  }, 5000);
+  var _cl = console.log.bind(console);
+  console.log = function(){
+    var s; try { s = (arguments.length === 1) ? '' + arguments[0] : [].join.call(arguments, ' '); } catch(e){ s=''; }
+    if (s.indexOf('ShowUI UIGamePause') >= 0) window.__setPause(1);
+    else if (s.indexOf('ShowUI') >= 0) window.__setPause(0);
+    return _cl.apply(null, arguments);
+  };
+  var installed = false;
+  function tryInstall(){
+    if (installed) return;
+    var C = window.__cap;
+    if (!C || !C.memory || !C.table || !window.gameInstance) return;
+    if (C.table.length < 512) return;
+    fetch('pause-helper.wasm').then(function(r){ return r.arrayBuffer(); }).then(function(buf){
+      return WebAssembly.instantiate(buf, { m: { mem: C.memory }, env: { notify: function(){ window.__setPause(0); } } });
+    }).then(function(h){
+      var H = h.instance.exports, T = C.table;
+      H.aux.set(0, T.get(8182)); H.aux.set(1, T.get(4254)); H.aux.set(2, T.get(4255)); H.aux.set(3, T.get(24110));
+      T.set(8182, H.hookSetActive); T.set(4254, H.hookGetTime);
+      T.set(4255, H.hookGetDeltaTime); T.set(24110, H.hookGetFixedDeltaTime);
+      installed = true; window.__pauseHook = H;
+      if (window.__diagAdd) window.__diagAdd({k:'phook', tbl:T.length});
+      console.log('[pause-hook] installed');
+    }).catch(function(e){ if (window.__diagAdd) window.__diagAdd({k:'phookfail', m:String(e&&e.message).slice(0,120)}); });
+  }
+  var t0 = Date.now();
+  (function w(){ tryInstall(); if (!installed && Date.now()-t0 < 240000) setTimeout(w, 500); })();
+})();
+</script>
     <div id="tuanjie-container" class="tuanjie-desktop">
       <canvas id="tuanjie-canvas" width=960 height=600 tabindex="-1"></canvas>
       <div id="tuanjie-loading-bar">
