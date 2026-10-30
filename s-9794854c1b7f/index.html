@@ -105,9 +105,7 @@
           return nativeRAF(tick);
         };
         var m = location.search.match(/[?&]fps=(\d+)/);
-        var isMobileUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         if (m) window.__shipSetFPS(parseInt(m[1], 10));
-        else if (isMobileUA) window.__shipSetFPS(30);
       })();
       var gameInstance;
       var container = document.querySelector("#tuanjie-container");
