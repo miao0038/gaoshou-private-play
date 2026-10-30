@@ -15,10 +15,11 @@
   <style>
     html, body { height: 100% !important; margin: 0 !important; overflow: hidden !important; overscroll-behavior: none; background: #07111f; }
     #tuanjie-container.tuanjie-mobile {
-      position: fixed !important; inset: auto !important; left: 50% !important; top: 50% !important;
-      width: max(100vw, calc(100vh * var(--shipA, 1.85))) !important;
-      height: max(100vh, calc(100vw / var(--shipA, 1.85))) !important;
-      transform: translate(-50%, -50%) !important;
+      position: fixed !important; left: 0 !important; top: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      height: 100dvh !important;
+      transform: none !important;
     }
     #tuanjie-container.tuanjie-mobile #tuanjie-canvas { width: 100% !important; height: 100% !important; }
     body.rot #tuanjie-container.tuanjie-mobile {
@@ -28,8 +29,8 @@
       transform-origin: center center !important;
     }
     #tuanjie-container.tuanjie-desktop {
-      width: max(100vw, calc(100vh * var(--shipA, 1.85))) !important;
-      height: max(100vh, calc(100vw / var(--shipA, 1.85))) !important;
+      width: 100vw !important;
+      height: 100vh !important;
       left: 50% !important; top: 50% !important;
       transform: translate(-50%, -50%) !important;
     }
@@ -49,8 +50,20 @@
   window.__diagAdd = add; window.__diagList = function(){ return L; };
   window.addEventListener('error', function(e){ add({k:'jserr', m:String(e.message||'').slice(0,200), s:String(e.filename||'').split('/').pop()+':'+e.lineno}); });
   window.addEventListener('unhandledrejection', function(e){ add({k:'rej', m:String(e.reason||'').slice(0,200)}); });
+  function probeMsg(s){
+    if (!/UIGamePause/i.test(s)) return 0;
+    if (/found/i.test(s) && !/receiver/i.test(s)) return 2;   // not found -> panel gone
+    if (/receiver|missing|has no method|does not have/i.test(s)) return 1;  // panel alive
+    return 0;
+  }
   var ce = console.error;
-  console.error = function(){ try { add({k:'cerr', m:[].join.call(arguments,' ').slice(0,240)}); } catch(e){} return ce.apply(console, arguments); };
+  console.error = function(){
+    var s; try { s = [].join.call(arguments,' '); } catch(e){ s=''; }
+    var pr = probeMsg(s);
+    if (pr){ if (window.__onProbe) window.__onProbe(pr === 2); return; }
+    if (s) add({k:'cerr', m:s.slice(0,240)});
+    return ce.apply(console, arguments);
+  };
   var n=0, t0=performance.now();
   function raf(t){ n++; if (t-t0>=5000){ var fps=Math.round(n*1000/(t-t0)); if (fps<45) add({k:'lowfps', v:fps}); n=0; t0=t; } requestAnimationFrame(raf); }
   requestAnimationFrame(raf);
@@ -66,8 +79,42 @@
 </script>
 <script>
 (function(){
-  if (window.__wasmCapWrap) return;
-  window.__wasmCapWrap = true;
+  if (window.__pauseV3) return; window.__pauseV3 = true;
+  window.__paused = false;
+  var REAL_NOW = null, frozenAt = 0, offset = 0;
+  var REAL_DATE = null, frozenDate = 0, dateOff = 0;
+  var pauseT = 0, markers = {};
+  function setPause(v){
+    if (v === window.__paused) return;
+    var now = REAL_NOW ? REAL_NOW() : performance.now();
+    if (v){ frozenAt = now; frozenDate = REAL_DATE ? REAL_DATE() : 0; pauseT = Date.now(); markers = {}; }
+    else { offset += now - frozenAt; if (REAL_DATE && frozenDate) dateOff += REAL_DATE() - frozenDate; }
+    window.__paused = v;
+    if (window.__diagAdd) window.__diagAdd({k: v ? 'pause' : 'resume'});
+  }
+  window.__setPause = setPause;
+  window.__onProbe = function(gone){ if (gone && window.__paused) setPause(0); };
+  function wrapImp(i){
+    try {
+      if (i && i.env){
+        if (typeof i.env.emscripten_get_now === 'function' && !i.env.__frozenNow){
+          REAL_NOW = i.env.emscripten_get_now;
+          i.env.emscripten_get_now = function(){
+            return window.__paused ? frozenAt : (REAL_NOW() - offset);
+          };
+          i.env.__frozenNow = true;
+        }
+        if (typeof i.env._emscripten_date_now === 'function' && !i.env.__frozenDate){
+          REAL_DATE = i.env._emscripten_date_now;
+          i.env._emscripten_date_now = function(){
+            return window.__paused ? frozenDate : (REAL_DATE() - dateOff);
+          };
+          i.env.__frozenDate = true;
+        }
+      }
+    } catch(e){}
+    return i;
+  }
   window.__cap = { memory:null, table:null };
   function scanObj(o, depth){
     if (!o || typeof o !== 'object' || depth > 2) return;
@@ -81,45 +128,44 @@
   }
   var _inst = WebAssembly.instantiate.bind(WebAssembly);
   WebAssembly.instantiate = function(){
-    for (var i=0;i<arguments.length;i++) scanObj(arguments[i], 0);
+    for (var i=0;i<arguments.length;i++){ scanObj(arguments[i], 0); if (i===1) wrapImp(arguments[i]); }
     var r = _inst.apply(null, arguments);
     var after = function(res){ try { if (res && res.instance) scanObj(res.instance.exports,0); } catch(e){} return res; };
     return (r && typeof r.then === 'function') ? r.then(after) : r;
   };
   var _is = WebAssembly.instantiateStreaming;
   if (_is) WebAssembly.instantiateStreaming = function(){
-    for (var i=0;i<arguments.length;i++) scanObj(arguments[i], 0);
+    for (var i=0;i<arguments.length;i++){ scanObj(arguments[i], 0); if (i===1) wrapImp(arguments[i]); }
     var r = _is.apply(null, arguments);
     var after = function(res){ try { if (res && res.instance) scanObj(res.instance.exports,0); } catch(e){} return res; };
     return (r && typeof r.then === 'function') ? r.then(after) : r;
   };
   var _IC = WebAssembly.Instance;
   window.WebAssembly.Instance = function(mod, imp){
-    scanObj(imp, 0);
+    if (imp){ scanObj(imp, 0); wrapImp(imp); }
     var inst = new _IC(mod, imp);
     try { scanObj(inst.exports,0); } catch(e){}
     return inst;
   };
-  var pausedAt = 0;
-  window.__setPause = function(v){
-    var H = window.__pauseHook; if (!H || H.pauseFlag.value === v) return;
-    H.pauseFlag.value = v;
-    if (v) pausedAt = Date.now();
-    if (window.__diagAdd) window.__diagAdd({k: v ? 'pause' : 'resume'});
-  };
-  setInterval(function(){
-    var H = window.__pauseHook;
-    if (H && H.pauseFlag.value === 1 && Date.now() - pausedAt > 120000){
-      window.__setPause(0); if (window.__diagAdd) window.__diagAdd({k:'watchdog'});
-    }
-  }, 5000);
   var _cl = console.log.bind(console);
   console.log = function(){
-    var s; try { s = (arguments.length === 1) ? '' + arguments[0] : [].join.call(arguments, ' '); } catch(e){ s=''; }
-    if (s.indexOf('ShowUI UIGamePause') >= 0) window.__setPause(1);
-    else if (s.indexOf('ShowUI') >= 0) window.__setPause(0);
+    var s; try { s = (arguments.length===1) ? ''+arguments[0] : [].join.call(arguments,' '); } catch(e){ s=''; }
+    if (s.indexOf('ShowUI UIGamePause') >= 0) setPause(1);
+    else if (s.indexOf('ShowUI') >= 0 && window.__paused) setPause(0);
+    if (/UIGamePause/i.test(s) && /found|receiver|missing/i.test(s) && window.__onProbe){
+      var pr = (/found/i.test(s) && !/receiver/i.test(s));
+      window.__onProbe(pr);
+    }
     return _cl.apply(null, arguments);
   };
+  setInterval(function(){
+    if (window.__paused && Date.now() - pauseT > 120000){ setPause(0); if (window.__diagAdd) window.__diagAdd({k:'watchdog'}); }
+  }, 5000);
+  setInterval(function(){
+    if (!window.__paused) return;
+    var gi = window.gameInstance;
+    if (gi && gi.SendMessage){ try { gi.SendMessage('UIGamePause', 'zzProbe9', '1'); } catch(e){} }
+  }, 3000);
   var installed = false;
   function tryInstall(){
     if (installed) return;
@@ -127,22 +173,25 @@
     if (!C || !C.memory || !C.table || !window.gameInstance) return;
     if (C.table.length < 512) return;
     fetch('pause-helper.wasm').then(function(r){ return r.arrayBuffer(); }).then(function(buf){
-      return WebAssembly.instantiate(buf, { m: { mem: C.memory }, env: { notify: function(){ window.__setPause(0); } } });
+      return WebAssembly.instantiate(buf, { m: { mem: C.memory }, env: { notify: function(p, v){
+        try {
+          if (v === 0 && Date.now() - pauseT < 5000) markers[p] = 1;
+          if (window.__paused && v === 1 && (markers[p] || Date.now() - pauseT > 3000)) setPause(0);
+        } catch(e){}
+      } } });
     }).then(function(h){
       var H = h.instance.exports, T = C.table;
-      H.aux.set(0, T.get(8182)); H.aux.set(1, T.get(4254)); H.aux.set(2, T.get(4255)); H.aux.set(3, T.get(24110));
-      T.set(8182, H.hookSetActive); T.set(4254, H.hookGetTime);
-      T.set(4255, H.hookGetDeltaTime); T.set(24110, H.hookGetFixedDeltaTime);
-      installed = true; window.__pauseHook = H;
+      H.aux.set(0, T.get(3500));
+      T.set(3500, H.hookSetActive);
+      installed = true;
+      console.log('[pause-hook] installed (SetActive 3500), tableLen=', T.length);
       if (window.__diagAdd) window.__diagAdd({k:'phook', tbl:T.length});
-      console.log('[pause-hook] installed');
     }).catch(function(e){ if (window.__diagAdd) window.__diagAdd({k:'phookfail', m:String(e&&e.message).slice(0,120)}); });
   }
-  var t0 = Date.now();
-  (function w(){ tryInstall(); if (!installed && Date.now()-t0 < 240000) setTimeout(w, 500); })();
+  var t0i = Date.now();
+  (function w(){ tryInstall(); if (!installed && Date.now()-t0i < 240000) setTimeout(w, 500); })();
 })();
-</script>
-    <div id="tuanjie-container" class="tuanjie-desktop">
+</script><div id="tuanjie-container" class="tuanjie-desktop">
       <canvas id="tuanjie-canvas" width=960 height=600 tabindex="-1"></canvas>
       <div id="tuanjie-loading-bar">
         <div id="tuanjie-logo"></div>
@@ -378,8 +427,8 @@
       } else {
         // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
 
-              canvas.style.width = "max(100vw, calc(100vh * var(--shipA, 1.85)))";
-              canvas.style.height = "max(100vh, calc(100vw / var(--shipA, 1.85)))";
+              canvas.style.width = "100vw";
+              canvas.style.height = "100vh";
       }
       loadingBar.style.display = "block";
 
