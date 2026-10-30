@@ -152,8 +152,8 @@
         devicePixelRatio: (function () {
           var q = location.search.match(/[?&]dpr=([\d.]+)/);
           if (q) return Math.max(0.5, parseFloat(q[1]));
-          // 移动端 DPR=1 省填充率 (?dpr= 可覆盖)
-          if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return 1;
+          // 移动端 DPR=2 兼顾清晰度与性能 (?dpr= 可覆盖，弱机 ?dpr=1)
+          if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return 2;
           return window.devicePixelRatio || 1;
         })(),
         showBanner: unityShowBanner,
