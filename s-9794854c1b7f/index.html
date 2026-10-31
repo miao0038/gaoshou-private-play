@@ -90,9 +90,10 @@
   window.__paused = false;
   var REAL_NOW = null, frozenAt = 0, offset = 0;
   var REAL_DATE = null, frozenDate = 0, dateOff = 0;
-  var pauseT = 0, markers = {};
+  var pauseT = 0, markers = {}, pendingPause = null;
   function setPause(v){
     if (v === window.__paused) return;
+    if (!v && pendingPause){ clearTimeout(pendingPause); pendingPause = null; }
     var now = REAL_NOW ? REAL_NOW() : performance.now();
     if (v){ frozenAt = now; frozenDate = REAL_DATE ? REAL_DATE() : 0; pauseT = Date.now(); markers = {}; }
     else { offset += now - frozenAt; if (REAL_DATE && frozenDate) dateOff += REAL_DATE() - frozenDate; }
@@ -100,6 +101,11 @@
     if (window.__diagAdd) window.__diagAdd({k: v ? 'pause' : 'resume'});
   }
   window.__setPause = setPause;
+  // 延迟冻结: 让面板开场 scale tween 播完(约1s), 否则面板冻在半路忽大忽小 (r19)
+  function schedulePause(){
+    if (pendingPause) clearTimeout(pendingPause);
+    pendingPause = setTimeout(function(){ pendingPause = null; setPause(1); }, 1000);
+  }
   window.__onProbe = function(gone){ if (gone && window.__paused) setPause(0); };
   function wrapImp(i){
     try {
@@ -157,7 +163,7 @@
   var _cl = console.log.bind(console);
   console.log = function(){
     var s; try { s = (arguments.length===1) ? ''+arguments[0] : [].join.call(arguments,' '); } catch(e){ s=''; }
-    if (s.indexOf('ShowUI UIGamePause') >= 0) setPause(1);
+    if (s.indexOf('ShowUI UIGamePause') >= 0) schedulePause();
     else if (s.indexOf('ShowUI') >= 0 && window.__paused) setPause(0);
     if (/UIGamePause/i.test(s) && /found|receiver|missing/i.test(s) && window.__onProbe){
       var pr = (/found/i.test(s) && !/receiver/i.test(s));
@@ -477,11 +483,25 @@
         },
         WXCreateCustomAd(conf) {},
         WXADStyleChange(id, key, value) {},
-        WXShowAd(id) {},
+        WXShowAd(id, s, f) {
+          // offline stub: simulate rewarded video watched to the end
+          setTimeout(function () {
+            if (gameInstance)
+              gameInstance.SendMessage('WXSDKManagerHandler', 'ADOnCloseCallback',
+                JSON.stringify({ callbackId: s, errMsg: JSON.stringify({ isEnded: true }) }));
+          }, 800);
+        },
         WXHideAd(id) {},
         WXADGetStyleValue(id, key) {},
         WXADDestroy(id) {},
-        WXADLoad(id, succ, fail) {},
+        WXADLoad(id, succ, fail) {
+          // offline stub: simulate ad loaded successfully
+          setTimeout(function () {
+            if (gameInstance && succ)
+              gameInstance.SendMessage('WXSDKManagerHandler', 'ADOnLoadCallback',
+                JSON.stringify({ callbackId: succ, errMsg: 'loadAd:ok' }));
+          }, 150);
+        },
         WXToTempFilePathSync(conf) {},
         WXGetUserDataPath() {},
         WXWriteFileSync(filePath, data, encoding) {},
@@ -594,7 +614,13 @@
         WXGetFontRawData() {},
         WXShareFontBuffer() {},
         WXReportShareBehavior() {},
-        WXShowAd2() {},
+        WXShowAd2(id, branchId, branchDim, s, f) {
+          setTimeout(function () {
+            if (gameInstance && s)
+              gameInstance.SendMessage('WXSDKManagerHandler', 'ADOnCloseCallback',
+                JSON.stringify({ callbackId: s, errMsg: JSON.stringify({ isEnded: true }) }));
+          }, 800);
+        },
         WXToTempFilePath() {},
         WXDataContextPostMessage() {},
         WXHideOpenData() {},
