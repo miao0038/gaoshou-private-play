@@ -1171,7 +1171,10 @@
       lbBtn.textContent = '⭐';
       lbBtn.style.cssText = 'position:fixed;left:10px;top:calc(10px + env(safe-area-inset-top));z-index:99;padding:8px 11px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(10,20,35,.8);color:#ffd76a;font-size:14px;';
       lbBtn.onclick = function () { if (LB.name()) show(); else askName(show); };
-      // document.body.appendChild(lbBtn); // 线上版暂时隐藏排行榜入口
+      // 排行榜按钮: 检测到 /lb 后端时显示 (Pages 静态站无后端, 自动隐藏) (r21 合并旧版工作线)
+      fetch('/lb/top').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+        if (d && d.top) document.body.appendChild(lbBtn);
+      }).catch(function () {});
     })();
     // 竖屏一次性轻提示(不阻挡): 画面已自动旋转, 横持体验最佳 (r16)
     (function () {
@@ -1202,5 +1205,34 @@
       })();
     }
     </script>
-  </body>
+  <script>
+(function () {
+  if (window.shipGamelog) return; window.shipGamelog = true;
+  var sid = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+  var q = [];
+  function cap(s) { try { s = String(s); } catch (e) { s = '[unprintable]'; } return s.length > 400 ? s.slice(0, 400) : s; }
+  function push(kind, args) {
+    if (q.length > 800) return;
+    try { q.push(kind + '| ' + Array.prototype.map.call(args, cap).join(' ')); } catch (e) {}
+  }
+  ['log', 'warn', 'error', 'info'].forEach(function (m) {
+    var orig = console[m];
+    console[m] = function () { push(m, arguments); try { orig.apply(console, arguments); } catch (e) {} };
+  });
+  window.addEventListener('error', function (e) { push('pageerror', [e.message + ' @' + (e.filename||'') + ':' + e.lineno]); });
+  var started = false;
+  function start() {
+    if (started) return; started = true;
+    setInterval(function () {
+      if (!q.length) return;
+      var batch = q.splice(0, q.length);
+      try {
+        fetch('/gamelog', { method: 'POST', body: JSON.stringify({ sid: sid, logs: batch }) });
+      } catch (e) { q = batch.concat(q); if (q.length > 2000) q.length = 2000; }
+    }, 8000);
+  }
+  fetch('/lb/top').then(function (r) { if (r.ok) start(); }).catch(function () {});
+})();
+</script>
+</body>
 </html>
