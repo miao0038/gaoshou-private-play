@@ -21,6 +21,12 @@
       height: 100dvh !important;
       transform: none !important;
     }
+    body.port #tuanjie-container.tuanjie-mobile {
+      left: 50% !important; top: 50% !important;
+      width: 100vw !important;
+      height: calc(100vw / var(--shipA, 1.85)) !important;
+      transform: translate(-50%, -50%) !important;
+    }
     #tuanjie-container.tuanjie-mobile #tuanjie-canvas { width: 100% !important; height: 100% !important; }
     body.rot #tuanjie-container.tuanjie-mobile {
       width: max(100vh, calc(100vw * var(--shipA, 1.85))) !important;
@@ -358,59 +364,19 @@
           document.body.appendChild(rotBtn);
         })();
 
-        // 竖屏原生适配: 不再旋转画布, 引擎按屏幕比例自适应 (r13)
+        // 竖屏 contain 模式: 画布保持横版比例等比缩放居中, UI 布局正确不重叠, 输入无旋转天然正确 (r18)
+        function syncOri() {
+          var portrait = window.matchMedia('(orientation: portrait)').matches;
+          var mUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+          document.body.classList.toggle('port', portrait && mUA);
+        }
+        window.addEventListener('resize', syncOri);
+        window.addEventListener('orientationchange', function(){ setTimeout(syncOri, 200); });
+        syncOri();
 
-        // 旋转模式输入重映射: 拦截 -> 阻断 -> 补发合成事件
-        (function () {
-          var canvasEl = document.getElementById('tuanjie-canvas');
-          if (!canvasEl) return;
-          var dispatching = false;
-          function gameUV(e) {
-            return { u: e.clientY, v: document.documentElement.clientWidth - e.clientX };
-          }
-          function synthPointer(type, e, u, v) {
-            try {
-              return new PointerEvent(type, { bubbles: true, cancelable: true, composed: true,
-                clientX: u, clientY: v, screenX: u, screenY: v,
-                button: e.button || 0, buttons: e.buttons !== undefined ? e.buttons : 1,
-                pointerId: e.pointerId || 1, pointerType: e.pointerType || 'touch',
-                isPrimary: e.isPrimary !== false, pressure: 0.5, width: 1, height: 1 });
-            } catch (err) { return null; }
-          }
-          function synthTouch(type, e, u, v) {
-            try {
-              var mk = function (t, cu, cv) {
-                return new Touch({ identifier: t ? t.identifier : 1, target: canvasEl,
-                  clientX: cu, clientY: cv, pageX: cu, pageY: cv, screenX: cu, screenY: cv });
-              };
-              var changed = [mk(e.changedTouches ? e.changedTouches[0] : null, u, v)];
-              var all = [];
-              if (e.touches) for (var i = 0; i < e.touches.length; i++) {
-                var t = e.touches[i];
-                all.push(mk(t, t.clientY, document.documentElement.clientWidth - t.clientX));
-              }
-              return new TouchEvent(type, { bubbles: true, cancelable: true, composed: true,
-                changedTouches: changed, touches: type === 'touchend' ? [] : all,
-                targetTouches: type === 'touchend' ? [] : all });
-            } catch (err) { return null; }
-          }
-          function forward(e) {
-            if (dispatching) return;
-            if (!document.body.classList.contains('rot')) return;
-            if (e.target !== canvasEl) return;
-            var uv = gameUV(e);
-            var pe = synthPointer(e.type, e, uv.u, uv.v);
-            var te = e.type.indexOf('touch') === 0 ? synthTouch(e.type, e, uv.u, uv.v) : null;
-            dispatching = true;
-            try { if (pe) canvasEl.dispatchEvent(pe); if (te) canvasEl.dispatchEvent(te); }
-            finally { dispatching = false; }
-            e.stopPropagation();
-          }
-          ['pointerdown','pointermove','pointerup','pointercancel',
-           'touchstart','touchmove','touchend','touchcancel'].forEach(function (ev) {
-            window.addEventListener(ev, forward, { capture: true, passive: true });
-          });
-        })();
+        // 输入直接走 trusted 事件, 引擎经 JS_DOM_MapViewportCoordinate 处理 CSS 旋转坐标 (r17)
+
+        // 输入直接走 trusted 事件, 引擎经 JS_DOM_MapViewportCoordinate 处理 CSS 旋转坐标 (r17)
 
         // To lower canvas resolution on mobile devices to gain some
         // performance, uncomment the following line:
@@ -1181,7 +1147,17 @@
       lbBtn.onclick = function () { if (LB.name()) show(); else askName(show); };
       // document.body.appendChild(lbBtn); // 线上版暂时隐藏排行榜入口
     })();
-    // 竖屏引导层已移除: 竖屏原生可玩, ⛶ 按钮仍提供横屏全屏指引 (r13)
+    // 竖屏一次性轻提示(不阻挡): 画面已自动旋转, 横持体验最佳 (r16)
+    (function () {
+      if (!window.matchMedia('(orientation: portrait)').matches) return;
+      if (!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return;
+      var t = document.createElement('div');
+      t.textContent = '竖屏已适配；横持手机或点右下角全屏体验最佳';
+      t.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:98;padding:10px 16px;border-radius:12px;background:rgba(8,18,32,.85);color:#cfe3ff;font-size:13px;pointer-events:none;transition:opacity .6s;opacity:.95;';
+      document.body.appendChild(t);
+      setTimeout(function(){ t.style.opacity = '0'; }, 4000);
+      setTimeout(function(){ t.remove(); }, 5200);
+    })();
     // 自诊断 HUD (?debug=1)
     if (/[?&]debug=1/.test(location.search)) {
       (function () {
