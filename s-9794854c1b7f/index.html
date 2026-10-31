@@ -65,8 +65,9 @@
     return ce.apply(console, arguments);
   };
   var n=0, t0=performance.now();
-  function raf(t){ n++; if (t-t0>=5000){ var fps=Math.round(n*1000/(t-t0)); if (fps<45) add({k:'lowfps', v:fps}); n=0; t0=t; } requestAnimationFrame(raf); }
-  requestAnimationFrame(raf);
+  var nRAF = window.requestAnimationFrame.bind(window);
+  function raf(t){ n++; if (t-t0>=5000){ var fps=Math.round(n*1000/(t-t0)); if (fps<45) add({k:'lowfps', v:fps}); n=0; t0=t; } nRAF(raf); }
+  nRAF(raf);
   if (/[?&]dumplog=1/.test(location.search)) window.addEventListener('load', function(){
     var d=document.createElement('div');
     d.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;z-index:9999;background:rgba(0,0,0,.88);color:#7cff9b;font:11px/1.4 Menlo,monospace;padding:8px;border-radius:8px;max-height:42%;overflow:auto;white-space:pre-wrap;';
@@ -239,17 +240,17 @@
       (function () {
         var nativeRAF = window.requestAnimationFrame.bind(window);
         window.__shipTargetFPS = 0;
-        var last = 0;
         window.__shipSetFPS = function (fps) {
           window.__shipTargetFPS = (fps && fps > 0) ? fps : 0;
           console.log('[fps-shim] target =', window.__shipTargetFPS || 'uncapped');
         };
         window.requestAnimationFrame = function (cb) {
           var idle = /[?&]idle=1/.test(location.search);
+          var myLast = 0;
           function tick(t) {
             var iv = window.__shipTargetFPS ? (1000 / window.__shipTargetFPS) : 0;
-            if (!iv || t - last >= iv - 1) { last = t; cb(t); }
-            else if (idle) setTimeout(function () { nativeRAF(tick); }, Math.max(1, iv - (t - last)));
+            if (!iv || t - myLast >= iv - 1) { myLast = t; cb(t); }
+            else if (idle) setTimeout(function () { nativeRAF(tick); }, Math.max(1, iv - (t - myLast)));
             else nativeRAF(tick);
           }
           return nativeRAF(tick);
@@ -357,15 +358,7 @@
           document.body.appendChild(rotBtn);
         })();
 
-        // 竖屏自动旋转画布 (cover 裁切, 输入经重映射)
-        function syncRot() {
-          var portrait = window.matchMedia('(orientation: portrait)').matches;
-          var mUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          document.body.classList.toggle('rot', portrait && mUA);
-        }
-        window.addEventListener('resize', syncRot);
-        window.addEventListener('orientationchange', function(){ setTimeout(syncRot, 200); });
-        syncRot();
+        // 竖屏原生适配: 不再旋转画布, 引擎按屏幕比例自适应 (r13)
 
         // 旋转模式输入重映射: 拦截 -> 阻断 -> 补发合成事件
         (function () {
@@ -1188,23 +1181,7 @@
       lbBtn.onclick = function () { if (LB.name()) show(); else askName(show); };
       // document.body.appendChild(lbBtn); // 线上版暂时隐藏排行榜入口
     })();
-    // 竖屏引导层
-    (function () {
-      var hint = document.createElement('div');
-      hint.id = 'rotate-hint';
-      hint.innerHTML = '<div style="font-size:64px">📱</div><div class="t1">请横屏游玩</div>' +
-        '<div class="t2">糕手大作战是横版海战游戏<br>旋转手机即可自动进入全屏战斗<br><b>iPhone 推荐先"添加到主屏幕"再横屏</b></div>';
-      document.body.appendChild(hint);
-      function syncRot() {
-        var portrait = window.matchMedia('(orientation: portrait)').matches;
-        var mUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        document.body.classList.toggle('rot', portrait && mUA);
-        hint.style.display = (portrait && mUA) ? 'flex' : 'none';
-      }
-      window.addEventListener('resize', syncRot);
-      window.addEventListener('orientationchange', function(){ setTimeout(syncRot, 200); });
-      syncRot();
-    })();
+    // 竖屏引导层已移除: 竖屏原生可玩, ⛶ 按钮仍提供横屏全屏指引 (r13)
     // 自诊断 HUD (?debug=1)
     if (/[?&]debug=1/.test(location.search)) {
       (function () {
