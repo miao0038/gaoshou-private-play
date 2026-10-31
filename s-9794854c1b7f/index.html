@@ -82,6 +82,34 @@
     d.onclick = function(){ try { navigator.clipboard.writeText(JSON.stringify(L)); } catch(e){} };
     document.body.appendChild(d);
   });
+  // 启动看门狗: 25 秒仍无 loader 响应 → bootstall 遥测 + 可见提示 (r22)
+  setTimeout(function(){
+    if (!window.gameInstance && !window.__loaderLoaded){
+      add({k:'bootstall'});
+      try {
+        var w = document.createElement('div');
+        w.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(4,10,20,.92);color:#eaf4ff;display:flex;align-items:center;justify-content:center;text-align:center;';
+        w.innerHTML = '<div style="max-width:80vw;font-size:15px;line-height:2">⏳ 加载比预期慢很多<br>请刷新页面重试<br><span style="font-size:12px;color:#8ea6bf">若反复出现，请长按截图发给我们</span></div>';
+        document.body.appendChild(w);
+      } catch(e){}
+    }
+  }, 25000);
+  // wasm 编译失败提示: 特定旧版 iOS Safari 无法编译引擎 (r22)
+  var _ce2 = console.error;
+  console.error = function(){
+    var s; try { s = [].join.call(arguments,' '); } catch(e){ s=''; }
+    if (/failed to asynchronously prepare wasm/i.test(s) && !window.__wasmFailShown){
+      window.__wasmFailShown = true;
+      add({k:'wasmfail'});
+      try {
+        var w = document.createElement('div');
+        w.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(4,10,20,.95);color:#eaf4ff;display:flex;align-items:center;justify-content:center;text-align:center;';
+        w.innerHTML = '<div style="max-width:82vw;font-size:15px;line-height:2">⚠️ 游戏引擎无法在当前浏览器中启动<br><b>请先把 iOS 系统更新到最新版本</b><br>或改用 Chrome / Edge 等浏览器打开本页<br><span style="font-size:12px;color:#8ea6bf">此问题已自动记录</span></div>';
+        document.body.appendChild(w);
+      } catch(e){}
+    }
+    return _ce2.apply(console, arguments);
+  };
 })();
 </script>
 <script>
@@ -400,6 +428,7 @@
       var script = document.createElement("script");
       script.src = loaderUrl;
       script.onload = () => {
+        window.__loaderLoaded = true;
         createTuanjieInstance(canvas, config, (progress) => {
           progressBarFull.style.width = 100 * progress + "%";
               }).then((tuanjieInstance) => {
